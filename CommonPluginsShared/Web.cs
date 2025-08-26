@@ -758,69 +758,89 @@ namespace CommonPluginsShared
         /// <param name="url"></param>
         /// <param name="payload"></param>
         /// <returns></returns>
-        public static async Task<string> PostStringDataPayload(string url, string payload, List<HttpCookie> Cookies = null, List<KeyValuePair<string, string>> moreHeader = null)
+
+        public static async Task<string> PostStringDataPayload(
+                    string url,
+                    string payload,
+                    List<HttpCookie> Cookies = null,
+                    List<KeyValuePair<string, string>> moreHeader = null)
         {
-            //var config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
-            //var settings = (SettingsSection)config.GetSection("system.net/settings");
-            //var defaultValue = settings.HttpWebRequest.UseUnsafeHeaderParsing;
-            //settings.HttpWebRequest.UseUnsafeHeaderParsing = true;
-            //config.Save(ConfigurationSaveMode.Modified);
-            //ConfigurationManager.RefreshSection("system.net/settings");
+            string response = string.Empty;
 
-            var response = string.Empty;
+            // List of cookies to include
+            var allowedCookies = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "hltb_alive",
+                "hltb_view_list",
+                "hltb_online",
+                "OTGPPConsent",
+                "OptanonConsent",
+                "usprivacy"
+            };
 
-            HttpClientHandler handler = new HttpClientHandler();
+            // Create cookie container
+            var cookieContainer = new CookieContainer();
+
             if (Cookies != null)
             {
-                CookieContainer cookieContainer = new CookieContainer();
-
-                foreach (HttpCookie cookie in Cookies)
+                foreach (var cookie in Cookies)
                 {
-                    Cookie c = new Cookie
-                    {
-                        Name = cookie.Name,
-                        Value = Tools.FixCookieValue(cookie.Value),
-                        Domain = cookie.Domain,
-                        Path = cookie.Path
-                    };
+                    if (cookie.Domain.Contains("howlongtobeat") && !allowedCookies.Contains(cookie.Name))
+                        continue; // skip cookies not in the allowed list
 
                     try
                     {
-                        cookieContainer.Add(c);
+                        cookieContainer.Add(new Cookie(
+                            cookie.Name,
+                            Tools.FixCookieValue(cookie.Value),
+                            string.IsNullOrEmpty(cookie.Path) ? "/" : cookie.Path,
+                            cookie.Domain
+                        ));
                     }
                     catch (Exception ex)
                     {
                         Common.LogError(ex, true);
                     }
                 }
-
-                handler.CookieContainer = cookieContainer;
             }
+
+            // Handler with automatic decompression
+            var handler = new HttpClientHandler
+            {
+                CookieContainer = cookieContainer,
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+            };
 
             using (var client = new HttpClient(handler))
             {
-                client.DefaultRequestHeaders.Add("User-Agent", Web.UserAgent);
-                client.DefaultRequestHeaders.Add("accept", "application/json, text/javascript, */*; q=0.01");
-                client.DefaultRequestHeaders.Add("Vary", "Accept-Encoding");
+                // Minimal working headers
+                var uri = new Uri(url);
+                client.DefaultRequestHeaders.Host = uri.Host;
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(Web.UserAgent);
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/json, text/javascript, */*; q=0.01");
 
-                moreHeader?.ForEach(x =>
+                // Any additional headers
+                if (moreHeader != null)
                 {
-                    client.DefaultRequestHeaders.Add(x.Key, x.Value);
-                });
+                    foreach (var kv in moreHeader)
+                    {
+                        client.DefaultRequestHeaders.Add(kv.Key, kv.Value);
+                    }
+                }
 
-                HttpContent c = new StringContent(payload, Encoding.UTF8, "application/json");
+                // JSON content
+                var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-                HttpResponseMessage result;
                 try
                 {
-                    result = await client.PostAsync(url, c).ConfigureAwait(false);
+                    var result = await client.PostAsync(url, content).ConfigureAwait(false);
                     if (result.IsSuccessStatusCode)
                     {
                         response = await result.Content.ReadAsStringAsync().ConfigureAwait(false);
                     }
                     else
                     {
-                        Logger.Error($"Web error with status code {result.StatusCode.ToString()}");
+                        Logger.Error($"Web error with status code {result.StatusCode}");
                     }
                 }
                 catch (Exception ex)
@@ -829,12 +849,9 @@ namespace CommonPluginsShared
                 }
             }
 
-            //settings.HttpWebRequest.UseUnsafeHeaderParsing = defaultValue;
-            //config.Save(ConfigurationSaveMode.Modified);
-            //ConfigurationManager.RefreshSection("system.net/settings");
-
             return response;
         }
+
 
         public static async Task<string> PostStringDataCookies(string url, FormUrlEncodedContent formContent, List<HttpCookie> cookies = null)
         {
