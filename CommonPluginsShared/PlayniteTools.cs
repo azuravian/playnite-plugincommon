@@ -50,6 +50,7 @@ namespace CommonPluginsShared
             OculusLibrary,
             RiotLibrary,
             UplayLibrary,
+            LocalLibrary,
 
             SuccessStory,
             CheckDlc,
@@ -92,6 +93,7 @@ namespace CommonPluginsShared
             { new Guid("41E49490-0583-4148-94D2-940C7C74F1D9"), ExternalPlugin.EmuLibrary },
             { new Guid("EAD65C3B-2F8F-4E37-B4E6-B3DE6BE540C6"), ExternalPlugin.LegendaryLibrary },
             { new Guid("03689811-3F33-4DFB-A121-2EE168FB9A5C"), ExternalPlugin.GogOssLibrary },
+            { new Guid("2D01017D-024E-444D-80D3-F62F5BE3FCA5"), ExternalPlugin.LocalLibrary },
 
             { new Guid("CEBE6D32-8C46-4459-B993-5A5189D60788"), ExternalPlugin.SuccessStory },
             { new Guid("BF78D9AF-6E79-4C73-ACA6-C23A11A485AE"), ExternalPlugin.CheckDlc },
