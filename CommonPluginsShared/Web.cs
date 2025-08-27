@@ -30,7 +30,7 @@ namespace CommonPluginsShared
     {
         private static ILogger Logger => LogManager.GetLogger();
 
-        public static string UserAgent = $"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0 Playnite/{API.Instance.ApplicationInfo.ApplicationVersion.ToString(2)}";
+        public static string UserAgent => $"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0 Playnite/{API.Instance.ApplicationInfo.ApplicationVersion.ToString(2)}";
 
 
         private static string StrWebUserAgentType(WebUserAgentType userAgentType)
@@ -234,7 +234,7 @@ namespace CommonPluginsShared
                         {
                             uri += "?" + urlParams[1];
                         }
-                        
+
                         return await DownloadStringDataKeepParam(uri);
                     }
                 }
@@ -462,7 +462,7 @@ namespace CommonPluginsShared
                             redirectUri = new Uri(request.RequestUri.GetLeftPart(UriPartial.Authority) + redirectUri);
                             urlNew = redirectUri.ToString();
                         }
-                        
+
                         if (keepParam)
                         {
                             var urlParams = url.Split('?').ToList();
@@ -508,7 +508,7 @@ namespace CommonPluginsShared
 
             return string.Empty;
         }
-        
+
         public static async Task<string> DownloadStringData(string url, CookieContainer cookies = null, string userAgent = "")
         {
             var response = string.Empty;
@@ -595,7 +595,7 @@ namespace CommonPluginsShared
 
                 if (httpHeaders != null)
                 {
-                    httpHeaders.ForEach(x => 
+                    httpHeaders.ForEach(x =>
                     {
                         client.DefaultRequestHeaders.Add(x.Key, x.Value);
                     });
@@ -624,34 +624,52 @@ namespace CommonPluginsShared
         }
 
         /// <summary>
-        /// Download string data with a bearer token.
+        /// Downloads string data from a URL using an optional token and language header.
+        /// Optionally performs a pre-request to another URL before the main call.
         /// </summary>
-        /// <param name="url"></param>
-        /// <param name="token"></param>
-        /// <param name="urlBefore"></param>
-        /// <returns></returns>
+        /// <param name="url">The URL to fetch the data from.</param>
+        /// <param name="token">The Bearer token for Authorization header.</param>
+        /// <param name="urlBefore">An optional URL to call before the main request (e.g., for session setup).</param>
+        /// <param name="langHeader">Optional Accept-Language header value (e.g., "en-US").</param>
+        /// <returns>The response content as a string.</returns>
         public static async Task<string> DownloadStringData(string url, string token, string urlBefore = "", string langHeader = "")
         {
             using (var client = new HttpClient())
             {
+                // Set the user agent for the request
                 client.DefaultRequestHeaders.Add("User-Agent", Web.UserAgent);
 
-                if (!langHeader.IsNullOrEmpty())
+                // Add Accept-Language header if provided
+                if (!langHeader.IsNullOrWhiteSpace())
                 {
                     client.DefaultRequestHeaders.Add("Accept-Language", langHeader);
                 }
 
-                if (!urlBefore.IsNullOrEmpty())
+                // Make an optional preliminary request if specified
+                if (!urlBefore.IsNullOrWhiteSpace())
                 {
-                    await client.GetStringAsync(urlBefore).ConfigureAwait(false);
+                    try
+                    {
+                        await client.GetStringAsync(urlBefore).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn(ex, $"Pre-request to {urlBefore} failed.");
+                    }
                 }
 
-                client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
-                string result = await client.GetStringAsync(url).ConfigureAwait(false);
+                // Add the Authorization header
+                if (!token.IsNullOrWhiteSpace())
+                {
+                    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+                }
 
+                // Perform the main request
+                string result = await client.GetStringAsync(url).ConfigureAwait(false);
                 return result;
             }
         }
+
 
 
         public static async Task<string> DownloadPageText(string url, List<HttpCookie> cookies = null, string userAgent = "")
@@ -691,7 +709,7 @@ namespace CommonPluginsShared
                 {
                     await client.GetStringAsync(urlBefore).ConfigureAwait(false);
                 }
-                
+
                 string result = await client.GetStringAsync(url).ConfigureAwait(false);
                 return result;
             }
@@ -740,69 +758,89 @@ namespace CommonPluginsShared
         /// <param name="url"></param>
         /// <param name="payload"></param>
         /// <returns></returns>
-        public static async Task<string> PostStringDataPayload(string url, string payload, List<HttpCookie> Cookies = null, List<KeyValuePair<string, string>> moreHeader = null)
+
+        public static async Task<string> PostStringDataPayload(
+                    string url,
+                    string payload,
+                    List<HttpCookie> Cookies = null,
+                    List<KeyValuePair<string, string>> moreHeader = null)
         {
-            //var config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
-            //var settings = (SettingsSection)config.GetSection("system.net/settings");
-            //var defaultValue = settings.HttpWebRequest.UseUnsafeHeaderParsing;
-            //settings.HttpWebRequest.UseUnsafeHeaderParsing = true;
-            //config.Save(ConfigurationSaveMode.Modified);
-            //ConfigurationManager.RefreshSection("system.net/settings");
+            string response = string.Empty;
 
-            var response = string.Empty;
+            // List of cookies to include
+            var allowedCookies = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "hltb_alive",
+                "hltb_view_list",
+                "hltb_online",
+                "OTGPPConsent",
+                "OptanonConsent",
+                "usprivacy"
+            };
 
-            HttpClientHandler handler = new HttpClientHandler();
+            // Create cookie container
+            var cookieContainer = new CookieContainer();
+
             if (Cookies != null)
             {
-                CookieContainer cookieContainer = new CookieContainer();
-
-                foreach (HttpCookie cookie in Cookies)
+                foreach (var cookie in Cookies)
                 {
-                    Cookie c = new Cookie
-                    {
-                        Name = cookie.Name,
-                        Value = Tools.FixCookieValue(cookie.Value),
-                        Domain = cookie.Domain,
-                        Path = cookie.Path
-                    };
+                    if (cookie.Domain.Contains("howlongtobeat") && !allowedCookies.Contains(cookie.Name))
+                        continue; // skip cookies not in the allowed list
 
                     try
                     {
-                        cookieContainer.Add(c);
+                        cookieContainer.Add(new Cookie(
+                            cookie.Name,
+                            Tools.FixCookieValue(cookie.Value),
+                            string.IsNullOrEmpty(cookie.Path) ? "/" : cookie.Path,
+                            cookie.Domain
+                        ));
                     }
                     catch (Exception ex)
                     {
                         Common.LogError(ex, true);
                     }
                 }
-
-                handler.CookieContainer = cookieContainer;
             }
+
+            // Handler with automatic decompression
+            var handler = new HttpClientHandler
+            {
+                CookieContainer = cookieContainer,
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+            };
 
             using (var client = new HttpClient(handler))
             {
-                client.DefaultRequestHeaders.Add("User-Agent", Web.UserAgent);
-                client.DefaultRequestHeaders.Add("accept", "application/json, text/javascript, */*; q=0.01");
-                client.DefaultRequestHeaders.Add("Vary", "Accept-Encoding");
+                // Minimal working headers
+                var uri = new Uri(url);
+                client.DefaultRequestHeaders.Host = uri.Host;
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(Web.UserAgent);
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/json, text/javascript, */*; q=0.01");
 
-                moreHeader?.ForEach(x =>
+                // Any additional headers
+                if (moreHeader != null)
                 {
-                    client.DefaultRequestHeaders.Add(x.Key, x.Value);
-                });
+                    foreach (var kv in moreHeader)
+                    {
+                        client.DefaultRequestHeaders.Add(kv.Key, kv.Value);
+                    }
+                }
 
-                HttpContent c = new StringContent(payload, Encoding.UTF8, "application/json");
+                // JSON content
+                var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-                HttpResponseMessage result;
                 try
                 {
-                    result = await client.PostAsync(url, c).ConfigureAwait(false);
+                    var result = await client.PostAsync(url, content).ConfigureAwait(false);
                     if (result.IsSuccessStatusCode)
                     {
                         response = await result.Content.ReadAsStringAsync().ConfigureAwait(false);
                     }
                     else
                     {
-                        Logger.Error($"Web error with status code {result.StatusCode.ToString()}");
+                        Logger.Error($"Web error with status code {result.StatusCode}");
                     }
                 }
                 catch (Exception ex)
@@ -811,12 +849,9 @@ namespace CommonPluginsShared
                 }
             }
 
-            //settings.HttpWebRequest.UseUnsafeHeaderParsing = defaultValue;
-            //config.Save(ConfigurationSaveMode.Modified);
-            //ConfigurationManager.RefreshSection("system.net/settings");
-
             return response;
         }
+
 
         public static async Task<string> PostStringDataCookies(string url, FormUrlEncodedContent formContent, List<HttpCookie> cookies = null)
         {
