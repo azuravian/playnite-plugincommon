@@ -767,7 +767,7 @@ namespace CommonPluginsShared
         {
             string response = string.Empty;
 
-            // List of cookies to include
+            // List of cookies to include - sending all cookies results in Unauthorized response
             var allowedCookies = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "hltb_alive",
