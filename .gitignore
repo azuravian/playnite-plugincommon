@@ -259,3 +259,4 @@ paket-files/
 
 # Visual Studio Code stuff
 .vscode/
+/CommonPluginsShared/utilities/UtilityServices.cs
